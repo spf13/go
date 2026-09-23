@@ -88,7 +88,7 @@ func walkSymlinks(path string) (string, error) {
 		}
 
 		if fi.Mode()&fs.ModeSymlink == 0 {
-			if !fi.Mode().IsDir() && end < len(path) {
+			if !fi.Mode().IsDir() && end < len(path) && !isMountPointDirectory(dest) {
 				return "", syscall.ENOTDIR
 			}
 			continue
@@ -147,4 +147,22 @@ func walkSymlinks(path string) (string, error) {
 		}
 	}
 	return Clean(dest), nil
+}
+
+// isMountPointDirectory reports whether path names a directory that
+// EvalSymlinks should walk through even though os.Lstat did not describe it as
+// a directory.
+//
+// Only Windows needs this. A directory mount point is a reparse point tagged
+// IO_REPARSE_TAG_MOUNT_POINT, and os.Lstat reports it as neither a symlink
+// (that tag is IO_REPARSE_TAG_SYMLINK) nor a directory, so a path through one
+// would otherwise be rejected as if the element were a file. EvalSymlinks
+// still does not evaluate the mount point itself; it only walks through it,
+// which is what the operating system does when the path is opened.
+func isMountPointDirectory(path string) bool {
+	if runtime.GOOS != "windows" {
+		return false
+	}
+	info, err := os.Stat(path)
+	return err == nil && info.IsDir()
 }

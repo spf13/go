@@ -559,6 +559,43 @@ func TestEvalSymlinksJunctionToVolumeID(t *testing.T) {
 	}
 }
 
+// TestEvalSymlinksDirectoryBelowJunction tests that a directory junction is
+// walked through without being evaluated, so a path below one resolves, the
+// same way a junction that ends the path is returned unchanged.
+func TestEvalSymlinksDirectoryBelowJunction(t *testing.T) {
+	if winsymlink.Value() == "0" {
+		t.Skip("skipping test because winsymlink is not enabled")
+	}
+	t.Parallel()
+
+	output, _ := exec.Command("cmd", "/c", "mklink", "/?").Output()
+	if !strings.Contains(string(output), " /J ") {
+		t.Skip("skipping test because mklink command does not support junctions")
+	}
+
+	tmpdir := tempDirCanonical(t)
+	target := filepath.Join(tmpdir, "target")
+	if err := os.MkdirAll(filepath.Join(target, "sub"), 0755); err != nil {
+		t.Fatal(err)
+	}
+
+	dirlink := filepath.Join(tmpdir, "dirlink")
+	output, err := testenv.Command(t, "cmd", "/c", "mklink", "/J", dirlink, target).CombinedOutput()
+	if err != nil {
+		t.Fatalf("failed to run mklink %v %v: %v %q", dirlink, target, err, output)
+	}
+
+	// The junction itself is left as-is, as it is when it ends the path.
+	// Only the elements below it are walked through.
+	got, err := filepath.EvalSymlinks(filepath.Join(dirlink, "sub"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if want := filepath.Join(dirlink, "sub"); got != want {
+		t.Errorf(`EvalSymlinks(%q): got %q, want %q`, filepath.Join(dirlink, "sub"), got, want)
+	}
+}
+
 func TestEvalSymlinksMountPointRecursion(t *testing.T) {
 	// Test that EvalSymlinks doesn't follow recursive mount points.
 	// See go.dev/issue/40176.
